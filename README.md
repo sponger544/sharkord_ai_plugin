@@ -27,9 +27,27 @@ Connect your Sharkord server to any OpenAI-compatible API (Ollama, vLLM, LiteLLM
 
 1. **Build the plugin** (if not already built):
    ```bash
-   ### Need to add plugin-SDK bun linking
    git clone https://github.com/sponger544/sharkord_ai_plugin
    cd sharkord_ai_plugin
+   git clone https://github.com/Sharkord/sharkord.git
+   cd sharkord
+   bun install
+   cd packages/plugin-sdk
+   bun link
+   cd ../ui
+   bun link
+   cd ../../
+   git clone https://github.com/Sharkord/plugin-builder.git
+   cd plugin-builder
+   bun install
+   bun link
+   cd ../../
+   bun link @sharkord/plugin-sdk
+   bun link @sharkord/ui
+   bun link @sharkord/plugin-builder
+   ```
+1.1 When you're ready to build, run the following command. It will create the folder `dist` with the built plugin
+   ```bash
    bun run build
    ```
 
