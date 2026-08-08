@@ -1,4 +1,5 @@
-import { type PluginContext } from "@sharkord/plugin-sdk";
+import { createRegisterCommand, type PluginContext } from "@sharkord/plugin-sdk";
+import type { Commands } from "../contracts/commands";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -12,6 +13,11 @@ interface ChatMessage {
 interface ChannelHistory {
   messages: ChatMessage[];
   aiReplies: ChatMessage[];
+}
+
+interface UserTokenRecord {
+  tokensUsed: number;
+  resetTime: number;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -35,10 +41,7 @@ function loadHistory(ctx: PluginContext, channelId: number): ChannelHistory {
   try {
     const raw = fs.readFileSync(filePath, "utf-8");
     const parsed = JSON.parse(raw);
-    if (
-      Array.isArray(parsed.messages) &&
-      Array.isArray(parsed.aiReplies)
-    ) {
+    if (Array.isArray(parsed.messages) && Array.isArray(parsed.aiReplies)) {
       return parsed as ChannelHistory;
     }
     ctx.warn(`Corrupted history file for channel ${channelId}, resetting.`);
@@ -49,11 +52,7 @@ function loadHistory(ctx: PluginContext, channelId: number): ChannelHistory {
   }
 }
 
-function saveHistory(
-  ctx: PluginContext,
-  channelId: number,
-  history: ChannelHistory,
-): void {
+function saveHistory(ctx: PluginContext, channelId: number, history: ChannelHistory): void {
   const filePath = getHistoryPath(ctx, channelId);
   try {
     fs.writeFileSync(filePath, JSON.stringify(history, null, 2));
@@ -62,13 +61,8 @@ function saveHistory(
   }
 }
 
-function trimHistory(
-  history: ChannelHistory,
-  maxMessages: number,
-): ChannelHistory {
-  const all = [...history.messages, ...history.aiReplies].sort(
-    (a, b) => a.timestamp - b.timestamp,
-  );
+function trimHistory(history: ChannelHistory, maxMessages: number): ChannelHistory {
+  const all = [...history.messages, ...history.aiReplies].sort((a, b) => a.timestamp - b.timestamp);
   const kept = all.slice(-maxMessages);
   return {
     messages: kept.filter((m) => history.messages.includes(m)),
@@ -82,14 +76,10 @@ function buildApiMessages(
   systemPrompt: string,
 ): Array<{ role: string; content: string }> {
   const msgs: Array<{ role: string; content: string }> = [];
-  
   if (systemPrompt.trim()) {
     msgs.push({ role: "system", content: systemPrompt });
   }
-
-  const all = [...history.messages, ...history.aiReplies].sort(
-    (a, b) => a.timestamp - b.timestamp,
-  );
+  const all = [...history.messages, ...history.aiReplies].sort((a, b) => a.timestamp - b.timestamp);
   all.forEach((m) => {
     msgs.push({
       role: history.aiReplies.includes(m) ? "assistant" : "user",
@@ -116,7 +106,7 @@ async function callApi(
   messages: Array<{ role: string; content: string }>,
   timeoutMs: number,
   apiKey?: string,
-): Promise<string> {
+): Promise<{ reply: string; tokensUsed: number }> {
   const url = `${baseUrl.replace(/\/$/, "")}/v1/chat/completions`;
   ctx.debug(`Calling API: ${url} with model ${model}`);
 
@@ -142,7 +132,9 @@ async function callApi(
     }
 
     const data = await response.json();
-    return data.choices?.[0]?.message?.content ?? "(No response from API)";
+    const reply = data.choices?.[0]?.message?.content ?? "(No response from API)";
+    const tokensUsed = data.usage?.total_tokens ?? 0;
+    return { reply, tokensUsed };
   } finally {
     clearTimeout(timeoutId);
   }
@@ -150,16 +142,29 @@ async function callApi(
 
 // ─── Plugin State ────────────────────────────────────────────────────────
 const rateLimitMap = new Map<number, number>();
+const userTokenMap = new Map<number, UserTokenRecord>();
 const channelLocks = new Map<number, Promise<void>>();
 
-function withChannelLock<T>(
-  channelId: number,
-  fn: () => Promise<T>,
-): Promise<T> {
+function withChannelLock<T>(channelId: number, fn: () => Promise<T>): Promise<T> {
   const prev = channelLocks.get(channelId) ?? Promise.resolve();
   const next = prev.then(fn, fn);
   channelLocks.set(channelId, next.then(() => undefined, () => undefined));
   return next;
+}
+
+function checkTokenLimit(userId: number, limitPerHour: number, now: number): { allowed: boolean; resetInMinutes: number } {
+  if (limitPerHour <= 0) return { allowed: true, resetInMinutes: 0 };
+  
+  let record = userTokenMap.get(userId);
+  if (!record || now > record.resetTime) {
+    record = { tokensUsed: 0, resetTime: now + 3600_000 };
+    userTokenMap.set(userId, record);
+  }
+  
+  if (record.tokensUsed >= limitPerHour) {
+    return { allowed: false, resetInMinutes: Math.ceil((record.resetTime - now) / 60_000) };
+  }
+  return { allowed: true, resetInMinutes: 0 };
 }
 
 // ─── Plugin Init ─────────────────────────────────────────────────────────
@@ -217,6 +222,13 @@ const onLoad = async (ctx: PluginContext) => {
       defaultValue: 5,
     },
     {
+      key: "token-limit-per-hour",
+      name: "Token Limit (per hour)",
+      description: "Maximum tokens a single user can consume per hour (0 to disable)",
+      type: "number",
+      defaultValue: 0,
+    },
+    {
       key: "trigger-prefix",
       name: "Trigger Prefix",
       description: 'Message prefix that triggers AI reply. Leave empty to disable. For ease of use, I recommend creating a user with no permissions so it is easier to call the model.',
@@ -225,9 +237,30 @@ const onLoad = async (ctx: PluginContext) => {
     },
   ]);
 
+  // ─── Slash Command: /quota ────────────────────────────────────────────
+  const registerCommand = createRegisterCommand<Commands>(ctx);
+  
+  registerCommand("quota", { description: "Check your remaining AI token quota for this hour." }, async (invoker) => {
+    const tokenLimitPerHour = (await settings.get("token-limit-per-hour")) as number;
+    if (tokenLimitPerHour <= 0) {
+      return "✅ Token limits are currently disabled. You have unlimited access!";
+    }
+    
+    const userId = Number(invoker.userId);
+    const now = Date.now();
+    let record = userTokenMap.get(userId);
+    
+    if (!record || now > record.resetTime) {
+      return `✅ You have your full quota of ${tokenLimitPerHour} tokens available for this hour.`;
+    }
+    
+    const remaining = Math.max(0, tokenLimitPerHour - record.tokensUsed);
+    const resetInMinutes = Math.ceil((record.resetTime - now) / 60_000);
+    return `📊 You have ${remaining} tokens remaining out of ${tokenLimitPerHour}. Your quota resets in ${resetInMinutes} minute(s).`;
+  });
+
   // ─── Event Listener ───────────────────────────────────────────────────
   ctx.events.on("message:created", async (payload) => {
-    // Skip our own plugin messages (strict check)
     if (payload.pluginId && payload.pluginId !== ctx.pluginId) return;
     if (payload.pluginId) return;
 
@@ -235,8 +268,9 @@ const onLoad = async (ctx: PluginContext) => {
     const triggerPrefix = (await settings.get("trigger-prefix")) as string;
     const historyLength = (await settings.get("history-length")) as number;
     const rateLimitSeconds = (await settings.get("rate-limit-seconds")) as number;
+    const tokenLimitPerHour = (await settings.get("token-limit-per-hour")) as number;
 
-    // 1. Persist user message to history (serialized per channel)
+    // 1. Persist user message to history
     await withChannelLock(payload.channelId, () =>
       (async () => {
         const history = loadHistory(ctx, payload.channelId);
@@ -255,7 +289,7 @@ const onLoad = async (ctx: PluginContext) => {
     const question = text.slice(triggerPrefix.length).trim();
     if (!question) return;
 
-    // 3. Rate limiting
+    // 3. Per-channel cooldown
     if (rateLimitSeconds > 0) {
       const lastReply = rateLimitMap.get(payload.channelId) ?? 0;
       const elapsed = (Date.now() - lastReply) / 1000;
@@ -267,46 +301,47 @@ const onLoad = async (ctx: PluginContext) => {
       rateLimitMap.set(payload.channelId, Date.now());
     }
 
+    // 4. Per-user token limit check
+    if (payload.userId && tokenLimitPerHour > 0) {
+      const { allowed, resetInMinutes } = checkTokenLimit(payload.userId, tokenLimitPerHour, Date.now());
+      if (!allowed) {
+        await ctx.messages.send(payload.channelId, `⚠️ Hourly token limit reached. Try again in ${resetInMinutes} minute(s).`);
+        return;
+      }
+    }
+
     ctx.debug(`AI trigger in channel ${payload.channelId}: ${question}`);
 
-    // 4. Call API & post response (serialized per channel)
+    // 5. Call API & post response
     await withChannelLock(payload.channelId, () =>
       (async () => {
         try {
           const apiUrl = (await settings.get("api-url")) as string;
-          if (!isValidHttpUrl(apiUrl)) {
-            throw new Error("Invalid API URL configured. Must start with http:// or https://");
-          }
+          if (!isValidHttpUrl(apiUrl)) throw new Error("Invalid API URL configured.");
 
           const apiKey = (await settings.get("api-key")) as string;
           const modelName = (await settings.get("model-name")) as string;
           const systemPrompt = (await settings.get("system-prompt")) as string;
           const timeoutSeconds = (await settings.get("timeout-seconds")) as number;
 
-          if (!modelName || !modelName.trim()) {
-            throw new Error("Model name is not configured.");
-          }
+          if (!modelName?.trim()) throw new Error("Model name is not configured.");
 
           const history = loadHistory(ctx, payload.channelId);
           const trimmed = trimHistory(history, historyLength);
           const apiMessages = buildApiMessages(trimmed, question, systemPrompt);
 
-          const reply = await callApi(
-            ctx,
-            apiUrl,
-            modelName.trim(),
-            apiMessages,
-            timeoutSeconds * 1000,
-            apiKey,
+          const { reply, tokensUsed } = await callApi(
+            ctx, apiUrl, modelName.trim(), apiMessages, timeoutSeconds * 1000, apiKey,
           );
 
-          trimmed.aiReplies.push({
-            userId: null,
-            content: reply,
-            timestamp: Date.now(),
-          });
-          saveHistory(ctx, payload.channelId, trimmed);
+          // Update user token quota
+          if (payload.userId && tokenLimitPerHour > 0) {
+            let record = userTokenMap.get(payload.userId);
+            if (record) record.tokensUsed += tokensUsed;
+          }
 
+          trimmed.aiReplies.push({ userId: null, content: reply, timestamp: Date.now() });
+          saveHistory(ctx, payload.channelId, trimmed);
           await ctx.messages.send(payload.channelId, reply);
         } catch (err) {
           ctx.error("AI request failed:", err);
@@ -315,11 +350,7 @@ const onLoad = async (ctx: PluginContext) => {
               ? `⚠️ Timeout: API didn't respond within ${(await settings.get("timeout-seconds")) as number}s.`
               : `⚠️ Error: ${err instanceof Error ? err.message : String(err)}`;
           
-          try {
-            await ctx.messages.send(payload.channelId, errorMsg);
-          } catch {
-            ctx.error("Failed to post error message to channel.");
-          }
+          try { await ctx.messages.send(payload.channelId, errorMsg); } catch { /* ignore */ }
         }
       })(),
     );
@@ -329,6 +360,7 @@ const onLoad = async (ctx: PluginContext) => {
 // ─── Plugin Cleanup ──────────────────────────────────────────────────────
 const onUnload = (ctx: PluginContext) => {
   rateLimitMap.clear();
+  userTokenMap.clear();
   channelLocks.clear();
   ctx.log("AI Chat plugin unloaded");
 };
