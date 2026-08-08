@@ -1,43 +1,127 @@
-Based on my general knowledge, the provided context does not include specific instructions for publishing the plugin. However, following standard Bun/Git workflows and the Sharkord plugin setup process, here is how you can build and publish your plugin:
+# Sharkord AI Chat Plugin
 
-### 1. Build the Plugin
-Before publishing, you must compile the TypeScript source code into the distributable format.
-```bash
-bun run build
+Connect your Sharkord server to any OpenAI-compatible API (Ollama, vLLM, LiteLLM, Open-WebUI, etc.) for in-channel AI conversations with persistent context.
+
+## Features
+
+- **OpenAI-Compatible API Support**: Works with Ollama, vLLM, LiteLLM, Open-WebUI, and any endpoint supporting `/v1/chat/completions`
+- **Channel-Based Context**: Maintains separate conversation history per channel
+- **Persistent Memory**: History survives server restarts via local JSON storage
+- **Configurable Trigger**: Custom prefix (e.g., `@OpenAI `) to initiate conversations
+- **System Prompts**: Define custom personas, instructions, or behavioral constraints
+- **Rate Limiting**: Prevents spam with per-channel cooldown timers
+- **Concurrent Safety**: Serializes file I/O to prevent history corruption
+- **Graceful Degradation**: Handles API errors, timeouts, and corrupted files without crashing
+
+## Installation
+
+### Prerequisites
+
+- Sharkord server running
+- OpenAI-compatible API instance accessible from the server
+
+### Setup
+
+1. **Build the plugin** (if not already built):
+   ```bash
+   cd sharkord-ai-chat
+   bun run build
+   ```
+
+2. **Install the plugin** into your Sharkord instance:
+   - Copy the `dist/` folder to your Sharkord plugins directory
+   - Restart your Sharkord server
+
+3. **Configure settings** via the Sharkord admin panel:
+   - Navigate to **Plugins → AI Chat → Settings**
+   - Configure the options below
+
+## Configuration
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| **API URL** | Base URL of your OpenAI-compatible API instance. Some endpoints (Open-WebUI) may require the `/api` suffix, otherwise you will get a 405 error. | `http://localhost:11434` |
+| **API Key** | Optional Bearer token for authentication. Leave empty for local Ollama. | *(empty)* |
+| **Model Name** | Name of the model to use (e.g., `llama3.2`, `gpt-3.5-turbo`, `mistral`) | `llama3.2` |
+| **System Prompt** | Optional system prompt sent to the model for behavior/persona customization | `You are an AI Chat bot in a sharkord chat server...` |
+| **History Length** | Number of recent messages to include as context (0-100 recommended) | `20` |
+| **Request Timeout** | Seconds to wait for API response before timing out | `120` |
+| **Rate Limit (seconds)** | Minimum seconds between AI replies per channel (0 to disable) | `5` |
+| **Trigger Prefix** | Message prefix that triggers AI reply. Leave empty to disable. For ease of use, creating a dedicated user with no permissions makes it easier to call the model. | `@OpenAI ` |
+
+## Usage
+
+### Triggering AI Responses
+
+Type a message starting with your configured prefix in any channel:
+
 ```
-This generates the `dist/` folder, which contains the bundled JavaScript files required by Sharkord.
-
-### 2. Prepare for Git Publishing
-Ensure your repository is clean and ready to commit:
-```bash
-git add .
-git commit -m "feat: finalize AI chat plugin settings and production safeguards"
+@OpenAI What is the capital of France?
 ```
 
-### 3. Push to Your Repository
-Push the code to your remote repository (e.g., GitHub, GitLab):
-```bash
-git push origin main
+The plugin will:
+1. Capture the message and add it to channel history
+2. Check rate limits (if enabled)
+3. Send the request to your configured API with context
+4. Post the full response directly to the channel
+
+### Channel Context
+
+Each channel maintains its own conversation history. The AI will remember previous messages within the configured history length, enabling contextual follow-ups:
+
+```
+@OpenAI Explain quantum computing
+@OpenAI Can you give me a real-world example?
+@OpenAI How does this relate to cryptography?
 ```
 
-### 4. Publishing / Distribution Options
-Sharkord plugins are typically distributed in one of two ways:
+### History Management
 
-**Option A: Direct GitHub Distribution (Recommended)**
-- Users can install your plugin directly from your repository URL.
-- Share your repository link (e.g., `https://github.com/yourusername/sharkord-ai-chat`) with your community or submit it to the Sharkord plugin marketplace if a submission form/PR process is available.
-- Users will clone your repo, run `bun run build`, and place the `dist/` folder into their Sharkord plugins directory.
+- History files are stored in `{plugin_dir}/history/channel-{id}.json`
+- Files persist across server restarts
+- Corrupted files are automatically reset
+- History is trimmed to the configured length automatically
 
-**Option B: Publish to a Package Registry (Optional)**
-If you want users to install it via a package manager command:
-```bash
-bun publish
-```
-*(Note: This requires a configured `package.json` with a valid name, version, and an account on the Bun/npm registry. Sharkord's plugin loader primarily expects the compiled `dist/` folder, so direct repository sharing is usually the standard approach.)*
+## Troubleshooting
 
-### Pre-Publish Checklist
-- Ensure `manifest.json` has a unique `id` (e.g., `"sharkord-ai-chat"`) and an incremented `version`.
-- Verify that `dist/` is generated correctly after `bun run build`.
-- Double-check that your `README.md` includes installation instructions pointing to your repository.
+### Common Issues
 
-Let me know if you need help configuring `package.json` for registry publishing or setting up automated GitHub Actions for CI/CD!
+| Problem | Solution |
+|---------|----------|
+| **405 Method Not Allowed** | Add `/api` suffix to your API URL (e.g., `http://localhost:3000/api`) |
+| **401 Unauthorized** | Set your API Key in the plugin settings |
+| **Timeout errors** | Increase the Request Timeout setting or use a smaller/faster model |
+| **No response** | Verify your API URL is accessible from the Sharkord server |
+| **History not persisting** | Check that the plugin has write permissions to its directory |
+
+### Debugging
+
+- Enable debug logging in your Sharkord server configuration
+- Check plugin logs for API errors and connection issues
+- Verify history files are being created in the `history/` directory
+
+## Technical Details
+
+- **API Endpoint**: `/v1/chat/completions` (OpenAI-compatible)
+- **Message Format**: Standard OpenAI messages array with `role` and `content`
+- **History Storage**: JSON files per channel in `{plugin_dir}/history/`
+- **Concurrency**: Serialized file I/O per channel to prevent corruption
+- **Rate Limiting**: In-memory per-channel cooldown (resets on plugin reload)
+
+## Requirements
+
+- Sharkord server (latest version recommended)
+- OpenAI-compatible API endpoint
+- Network access from Sharkord server to API endpoint
+
+## License
+
+[Your License Here]
+
+## Author
+
+[Your Name/Handle]
+
+---
+
+*For support, please open an issue on the [GitHub repository](#) or contact the plugin author.*
