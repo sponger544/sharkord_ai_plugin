@@ -1,4 +1,7 @@
+
 # Sharkord AI Chat Plugin
+
+> **⚠️ AI-Generated Disclaimer**: This plugin, including all source code and documentation (`README.md`), was generated 100% by AI with very minor human supervision. Please review, test thoroughly in a non-production environment, and use at your own risk.
 
 Connect your Sharkord server to any OpenAI-compatible API (Ollama, vLLM, LiteLLM, Open-WebUI, etc.) for in-channel AI conversations with persistent context.
 
@@ -113,4 +116,5 @@ Each channel maintains its own conversation history. The AI will remember previo
 - Sharkord server (latest version recommended)
 - OpenAI-compatible API endpoint
 - Network access from Sharkord server to API endpoint
-*For support, please open an issue on the [GitHub repository](#) or contact the plugin author.*
+
+The disclaimer is placed at the very top for maximum visibility. Let me know if you'd like it styled differently or moved to a specific section!
