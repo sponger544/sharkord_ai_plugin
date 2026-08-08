@@ -28,26 +28,17 @@ Huge thanks to the creator of Sharkord for building this awesome self-hosted cha
 ## Configuration Settings
 
 | Setting | Description | Default |
-
 |---------|-------------|---------|
+| API URL | Base URL of your OpenAI-compatible API instance (e.g., Ollama, vLLM, LiteLLM). Some endpoints like Open-WebUI may require the /api suffix to avoid a 405 error. | http://localhost:11434 |
+| API Key | Optional Bearer token for authentication. Leave empty for local Ollama. | *(empty)* |
+| Model Name | Name of the model to use (e.g., llama3.2, gpt-3.5-turbo, mistral). | llama3.2 |
+| System Prompt | Optional system prompt sent to the model for behavior/persona customization. | You are an AI Chat bot in a sharkord chat server... |
+| History Length | Number of recent messages to include as context (0-100 recommended). | 20 |
+| Request Timeout | Seconds to wait for API response before timing out. | 120 |
+| Rate Limit (seconds) | Minimum seconds between AI replies per channel (0 to disable). | 5 |
+| Token Limit (per hour) | Maximum tokens a single user can consume per hour (0 to disable). | 0 |
+| Trigger Prefix | Message prefix that triggers AI reply. Leave empty to disable. For ease of use, creating a dedicated user with no permissions makes it easier to call the model. | @OpenAI |
 
-| **API URL** | Base URL of your OpenAI-compatible API instance. Some endpoints (Open-WebUI) may require the `/api` suffix, otherwise you will get a 405 error. | `http://localhost:11434` |
-
-| **API Key** | Optional Bearer token for authentication. Leave empty for local Ollama. | _(empty)_ |
-
-| **Model Name** | Name of the model to use (e.g., `llama3.2`, `gpt-3.5-turbo`, `mistral`) | `llama3.2` |
-
-| **System Prompt** | Optional system prompt sent to the model for behavior/persona customization | `You are an AI Chat bot in a sharkord chat server...` |
-
-| **History Length** | Number of recent messages to include as context (0-100 recommended) | `20` |
-
-| **Request Timeout** | Seconds to wait for API response before timing out | `120` |
-
-| **Rate Limit (seconds)** | Minimum seconds between AI replies per channel (0 to disable) | `5` |
-
-| **Token Limit (per hour)** | Maximum tokens a single user can consume per hour (0 to disable) | `0` |
-
-| **Trigger Prefix** | Message prefix that triggers AI reply. Leave empty to disable. For ease of use, creating a dedicated user with no permissions makes it easier to call the model. | `@OpenAI`  |
 
 ## Usage
 
@@ -60,12 +51,10 @@ The plugin captures the message, checks rate limits & token quotas, sends the re
 ### Slash Commands
 
 | Command | Description |
-
 |---------|-------------|
+| /chatbot | Displays instructions on how to trigger the AI bot. |
+| /quota | Shows your remaining token quota for the current hour. |
 
-| `/chatbot` | Displays instructions on how to trigger the AI bot |
-
-| `/quota` | Shows your remaining token quota for the current hour |
 
 ## Installation & Build
 
