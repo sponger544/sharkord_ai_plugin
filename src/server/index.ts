@@ -250,9 +250,14 @@ const onLoad = async (ctx: PluginContext) => {
 
     const text = payload.textContent || "";
 
-    // ─── Handle /chatbot and /quota via delete-and-replace pattern ──────
+    // ─── Handle /chatbot via delete-and-replace pattern ─────────────────
     if (text.trim().toLowerCase() === "/chatbot") {
-      try { await ctx.messages.delete(payload.messageId); } catch {}
+      ctx.debug(`Deleting command message ${payload.messageId} in channel ${payload.channelId}: "${text}"`);
+      try {
+        await ctx.messages.delete(payload.messageId);
+      } catch (err) {
+        ctx.error(`Failed to delete message ${payload.messageId}`, err);
+      }
       
       const triggerPrefix = (await settings.get("trigger-prefix")) as string;
       if (!triggerPrefix) {
@@ -263,8 +268,14 @@ const onLoad = async (ctx: PluginContext) => {
       return;
     }
 
+    // ─── Handle /quota via delete-and-replace pattern ──────────────────
     if (text.trim().toLowerCase() === "/quota") {
-      try { await ctx.messages.delete(payload.messageId); } catch {}
+      ctx.debug(`Deleting command message ${payload.messageId} in channel ${payload.channelId}: "${text}"`);
+      try {
+        await ctx.messages.delete(payload.messageId);
+      } catch (err) {
+        ctx.error(`Failed to delete message ${payload.messageId}`, err);
+      }
       
       const tokenLimitPerHour = (await settings.get("token-limit-per-hour")) as number;
       if (tokenLimitPerHour <= 0) {
