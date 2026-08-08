@@ -3,7 +3,7 @@
 
 > **⚠️ AI-Generated Disclaimer**: This plugin, including all source code and documentation (`README.md`), was generated 100% by AI with very minor human supervision. Please review, test thoroughly in a non-production environment, and use at your own risk.
 
-Thanks to the creator for making this awesome chat server! Please support the [them!](https://github.com/Sharkord/sharkord)
+Thanks to the creator for making this awesome chat server! Please support [them!](https://github.com/Sharkord/sharkord)
 
 Connect your Sharkord server to any OpenAI-compatible API (Ollama, vLLM, LiteLLM, Open-WebUI, etc.) for in-channel AI conversations with persistent context.
 
