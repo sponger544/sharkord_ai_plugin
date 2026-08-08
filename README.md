@@ -15,6 +15,7 @@ Connect your Sharkord server to any OpenAI-compatible API (Ollama, vLLM, LiteLLM
 - **Rate Limiting**: Prevents spam with per-channel cooldown timers
 - **Concurrent Safety**: Serializes file I/O to prevent history corruption
 - **Graceful Degradation**: Handles API errors, timeouts, and corrupted files without crashing
+- **Configurable Response Name**: Modifying the **Name** in manifest.json will change the bot's name. Must rebuild and move the plugin.
 
 ## Installation
 
