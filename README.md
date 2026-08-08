@@ -27,13 +27,17 @@ Connect your Sharkord server to any OpenAI-compatible API (Ollama, vLLM, LiteLLM
 
 1. **Build the plugin** (if not already built):
    ```bash
-   cd sharkord-ai-chat
+   git clone https://github.com/sponger544/sharkord_ai_plugin
+   cd sharkord_ai_plugin
    bun run build
    ```
 
 2. **Install the plugin** into your Sharkord instance:
    - Copy the `dist/` folder to your Sharkord plugins directory
    - Restart your Sharkord server
+     ```bash
+     docker restart sharkord
+     ```
 
 3. **Configure settings** via the Sharkord admin panel:
    - Navigate to **Plugins → AI Chat → Settings**
