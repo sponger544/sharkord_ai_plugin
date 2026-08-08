@@ -3,7 +3,7 @@
   "name": "OpenAI",
   "author": "Qwen 3.6 27B",
   "description": "Connects to a local OpenAI compatible instance for AI chat with channel-based conversation history.",
-  "homepage": "https://github.com/sponger544/ollama-ai-plugin",
+  "homepage": "https://github.com/sponger544/ollama_ai_plugin",
   "logo": "https://github.com/ollama/ollama/blob/main/docs/logo.svg",
   "sdkVersion": 1,
   "version": "0.0.2"
