@@ -237,9 +237,19 @@ const onLoad = async (ctx: PluginContext) => {
     },
   ]);
 
-  // ─── Slash Command: /quota ────────────────────────────────────────────
+  // ─── Slash Commands ───────────────────────────────────────────────────
   const registerCommand = createRegisterCommand<Commands>(ctx);
   
+  // /chatbot - tells users how to trigger the AI
+  registerCommand("chatbot", { description: "Learn how to use the AI chat bot." }, async () => {
+    const triggerPrefix = (await settings.get("trigger-prefix")) as string;
+    if (!triggerPrefix) {
+      return "⚠️ The AI chat bot is currently disabled. Contact an admin to configure a trigger prefix.";
+    }
+    return `💬 Mention ${triggerPrefix.trim()} at the start of your message to talk with the AI Bot.`;
+  });
+
+  // /quota - check remaining token quota
   registerCommand("quota", { description: "Check your remaining AI token quota for this hour." }, async (invoker) => {
     const tokenLimitPerHour = (await settings.get("token-limit-per-hour")) as number;
     if (tokenLimitPerHour <= 0) {
