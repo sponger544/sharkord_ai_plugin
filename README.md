@@ -120,5 +120,3 @@ Each channel maintains its own conversation history. The AI will remember previo
 - Sharkord server (latest version recommended)
 - OpenAI-compatible API endpoint
 - Network access from Sharkord server to API endpoint
-
-The disclaimer is placed at the very top for maximum visibility. Let me know if you'd like it styled differently or moved to a specific section!
