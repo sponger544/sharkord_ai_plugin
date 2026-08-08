@@ -113,15 +113,4 @@ Each channel maintains its own conversation history. The AI will remember previo
 - Sharkord server (latest version recommended)
 - OpenAI-compatible API endpoint
 - Network access from Sharkord server to API endpoint
-
-## License
-
-[Your License Here]
-
-## Author
-
-[Your Name/Handle]
-
----
-
 *For support, please open an issue on the [GitHub repository](#) or contact the plugin author.*
