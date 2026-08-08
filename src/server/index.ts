@@ -237,45 +237,73 @@ const onLoad = async (ctx: PluginContext) => {
     },
   ]);
 
-  // ─── Slash Commands ───────────────────────────────────────────────────
+  // ─── Register Commands (for autocomplete / command list) ──────────────
   const registerCommand = createRegisterCommand<Commands>(ctx);
   
-  // /chatbot - tells users how to trigger the AI
-  registerCommand("chatbot", { description: "Learn how to use the AI chat bot." }, async () => {
-    const triggerPrefix = (await settings.get("trigger-prefix")) as string;
-    if (!triggerPrefix) {
-      return "⚠️ The AI chat bot is currently disabled. Contact an admin to configure a trigger prefix.";
-    }
-    return `💬 Mention ${triggerPrefix.trim()} at the start of your message to talk with the AI Bot.`;
-  });
+  // Handlers intentionally minimal; actual responses handled via message listener below.
+  registerCommand("chatbot", { description: "Learn how to use the AI chat bot." }, async () => "");
+  registerCommand("quota", { description: "Check your remaining AI token quota for this hour." }, async () => "");
 
-  // /quota - check remaining token quota
-  registerCommand("quota", { description: "Check your remaining AI token quota for this hour." }, async (invoker) => {
-    const tokenLimitPerHour = (await settings.get("token-limit-per-hour")) as number;
-    if (tokenLimitPerHour <= 0) {
-      return "✅ Token limits are currently disabled. You have unlimited access!";
-    }
-    
-    const userId = Number(invoker.userId);
-    const now = Date.now();
-    let record = userTokenMap.get(userId);
-    
-    if (!record || now > record.resetTime) {
-      return `✅ You have your full quota of ${tokenLimitPerHour} tokens available for this hour.`;
-    }
-    
-    const remaining = Math.max(0, tokenLimitPerHour - record.tokensUsed);
-    const resetInMinutes = Math.ceil((record.resetTime - now) / 60_000);
-    return `📊 You have ${remaining} tokens remaining out of ${tokenLimitPerHour}. Your quota resets in ${resetInMinutes} minute(s).`;
-  });
-
-  // ─── Message Listener: History + AI Trigger ────────────────────────────
+  // ─── Message Listener: Commands + History + Trigger ────────────────────
   ctx.events.on("message:created", async (payload) => {
     if (!payload.messageId || !payload.channelId) return;
 
     const text = payload.textContent || "";
 
-    // Skip our own plugin messages (strict check)
+    // ─── Handle /chatbot via delete-and-replace pattern ─────────────────
+    if (text.trim().toLowerCase() === "/chatbot") {
+      ctx.debug(`Deleting command message ${payload.messageId} in channel ${payload.channelId}: "${text}"`);
+      try {
+        await ctx.messages.delete(payload.messageId);
+      } catch (err) {
+        ctx.error(`Failed to delete message ${payload.messageId}`, err);
+      }
+      
+      const triggerPrefix = (await settings.get("trigger-prefix")) as string;
+      if (!triggerPrefix) {
+        await ctx.messages.send(payload.channelId, "⚠️ The AI chat bot is currently disabled. Contact an admin to configure a trigger prefix.");
+        return;
+      }
+      await ctx.messages.send(payload.channelId, `💬 Mention ${triggerPrefix.trim()} at the start of your message to talk with the AI Bot.`);
+      return;
+    }
+
+    // ─── Handle /quota via delete-and-replace pattern ──────────────────
+    if (text.trim().toLowerCase() === "/quota") {
+      ctx.debug(`Deleting command message ${payload.messageId} in channel ${payload.channelId}: "${text}"`);
+      try {
+        await ctx.messages.delete(payload.messageId);
+      } catch (err) {
+        ctx.error(`Failed to delete message ${payload.messageId}`, err);
+      }
+      
+      const tokenLimitPerHour = (await settings.get("token-limit-per-hour")) as number;
+      if (tokenLimitPerHour <= 0) {
+        await ctx.messages.send(payload.channelId, "✅ Token limits are currently disabled. You have unlimited access!");
+        return;
+      }
+      
+      const userId = Number(payload.userId);
+      if (!userId) {
+        await ctx.messages.send(payload.channelId, "⚠️ Could not identify user.");
+        return;
+      }
+
+      const now = Date.now();
+      let record = userTokenMap.get(userId);
+      
+      if (!record || now > record.resetTime) {
+        await ctx.messages.send(payload.channelId, `✅ You have your full quota of ${tokenLimitPerHour} tokens available for this hour.`);
+        return;
+      }
+      
+      const remaining = Math.max(0, tokenLimitPerHour - record.tokensUsed);
+      const resetInMinutes = Math.ceil((record.resetTime - now) / 60_000);
+      await ctx.messages.send(payload.channelId, `📊 You have ${remaining} tokens remaining out of ${tokenLimitPerHour}. Your quota resets in ${resetInMinutes} minute(s).`);
+      return;
+    }
+
+    // ─── Skip our own plugin messages (strict check) ────────────────────
     if (payload.pluginId && payload.pluginId !== ctx.pluginId) return;
     if (payload.pluginId) return;
 
@@ -297,7 +325,7 @@ const onLoad = async (ctx: PluginContext) => {
       })(),
     );
 
-    // 2. Check trigger prefix for AI chat (skip if it's a registered command)
+    // 2. Check trigger prefix for AI chat
     if (!triggerPrefix || !text.startsWith(triggerPrefix)) return;
 
     const question = text.slice(triggerPrefix.length).trim();
