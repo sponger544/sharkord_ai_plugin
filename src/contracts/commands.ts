@@ -1,8 +1,10 @@
-type Commands = {
-  hello: {
-    args: { name: string };
+export type Commands = {
+  ask: {
+    args: { question: string };
+    response: string;
+  };
+  reset: {
+    args: Record<string, never>;
     response: string;
   };
 };
-
-export type { Commands };

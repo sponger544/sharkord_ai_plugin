@@ -1,10 +1,10 @@
 {
-  "id": "plugin-example",
-  "name": "Plugin Example",
-  "author": "Me",
-  "description": "This a Sharkord plugin example.",
-  "homepage": "https://some-page.com",
-  "logo": "https://placehold.co/100x100/white/black",
+  "id": "open-ai",
+  "name": "OpenAI",
+  "author": "Qwen 3.6 27B",
+  "description": "Connects to a local OpenAI compatible instance for AI chat with channel-based conversation history.",
+  "homepage": "https://github.com/sponger544/ollama-ai-plugin",
+  "logo": "https://github.com/ollama/ollama/blob/main/docs/logo.svg",
   "sdkVersion": 1,
   "version": "0.0.1"
 }

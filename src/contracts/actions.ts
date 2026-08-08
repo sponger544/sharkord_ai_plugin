@@ -1,8 +1,13 @@
-type Actions = {
-  sum: {
-    payload: { a: number; b: number };
-    response: number;
+export type Actions = {
+  ask: {
+    payload: {
+      channelId: number;
+      question: string;
+    };
+    response: string;
+  };
+  resetHistory: {
+    payload: { channelId: number };
+    response: string;
   };
 };
-
-export type { Actions };

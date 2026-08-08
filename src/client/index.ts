@@ -1,13 +1,3 @@
-import {
-  PluginSlot,
-  type TPluginComponentsMapBySlotId,
-} from "@sharkord/plugin-sdk";
-import { Home } from "./components/home";
-import { FullScreen } from "./components/full-screen";
-
-const components: TPluginComponentsMapBySlotId = {
-  [PluginSlot.HOME_SCREEN]: [Home],
-  [PluginSlot.FULL_SCREEN]: [FullScreen],
-};
-
-export { components };
+// Client side stays minimal — all logic is server-side.
+// Add UI components here later if you want a custom panel.
+export {};
