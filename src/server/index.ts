@@ -5,14 +5,14 @@ import * as path from "path";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 interface ChatMessage {
-  userId: number | null;
+  userId: number | null;      // AI replies use null for userId to distinguish them
   content: string;
   timestamp: number;
 }
 
 interface ChannelHistory {
-  messages: ChatMessage[];
-  aiReplies: ChatMessage[];
+  messages: ChatMessage[];    // User messages (includes trigger prefix)
+  aiReplies: ChatMessage[];   // Bot responses only
 }
 
 interface UserTokenRecord {
@@ -65,29 +65,25 @@ function trimHistory(history: ChannelHistory, maxMessages: number): ChannelHisto
   const all = [...history.messages, ...history.aiReplies].sort((a, b) => a.timestamp - b.timestamp);
   const kept = all.slice(-maxMessages);
   return {
-    messages: kept.filter((m) => history.messages.includes(m)),
-    aiReplies: kept.filter((m) => history.aiReplies.includes(m)),
+    messages: history.messages.filter(m => kept.includes(m)),
+    aiReplies: history.aiReplies.filter(m => kept.includes(m)),
   };
 }
 
+// ── FIXED: Build API messages purely from chronological history ──────────
 function buildApiMessages(
   history: ChannelHistory,
-  question: string,
-  systemPrompt: string,
 ): Array<{ role: string; content: string }> {
-  const msgs: Array<{ role: string; content: string }> = [];
-  if (systemPrompt.trim()) {
-    msgs.push({ role: "system", content: systemPrompt });
-  }
-  const all = [...history.messages, ...history.aiReplies].sort((a, b) => a.timestamp - b.timestamp);
-  all.forEach((m) => {
-    msgs.push({
-      role: history.aiReplies.includes(m) ? "assistant" : "user",
-      content: m.content,
-    });
-  });
-  msgs.push({ role: "user", content: question });
-  return msgs;
+  // Merge all messages and sort by timestamp.
+  // userId === null means it's an AI reply (assistant), otherwise user.
+  const all = [...history.messages, ...history.aiReplies].sort(
+    (a, b) => a.timestamp - b.timestamp,
+  );
+
+  return all.map(m => ({
+    role: m.userId === null ? "assistant" : "user",
+    content: m.content,
+  }));
 }
 
 function isValidHttpUrl(str: string): boolean {
@@ -154,13 +150,13 @@ function withChannelLock<T>(channelId: number, fn: () => Promise<T>): Promise<T>
 
 function checkTokenLimit(userId: number, limitPerHour: number, now: number): { allowed: boolean; resetInMinutes: number } {
   if (limitPerHour <= 0) return { allowed: true, resetInMinutes: 0 };
-  
+
   let record = userTokenMap.get(userId);
   if (!record || now > record.resetTime) {
     record = { tokensUsed: 0, resetTime: now + 3600_000 };
     userTokenMap.set(userId, record);
   }
-  
+
   if (record.tokensUsed >= limitPerHour) {
     return { allowed: false, resetInMinutes: Math.ceil((record.resetTime - now) / 60_000) };
   }
@@ -239,12 +235,11 @@ const onLoad = async (ctx: PluginContext) => {
 
   // ─── Register Commands (for autocomplete / command list) ──────────────
   const registerCommand = createRegisterCommand<Commands>(ctx);
-  
-  // Handlers intentionally minimal; actual responses handled via message listener below.
+
   registerCommand("chatbot", { description: "Learn how to use the AI chat bot." }, async () => "");
   registerCommand("quota", { description: "Check your remaining AI token quota for this hour." }, async () => "");
 
-  // ─── Message Listener: Commands + History + Trigger ────────────────────
+  // ─── Message Listener ──────────────────────────────────────────────────
   ctx.events.on("message:created", async (payload) => {
     if (!payload.messageId || !payload.channelId) return;
 
@@ -253,12 +248,8 @@ const onLoad = async (ctx: PluginContext) => {
     // ─── Handle /chatbot via delete-and-replace pattern ─────────────────
     if (text.trim().toLowerCase() === "/chatbot") {
       ctx.debug(`Deleting command message ${payload.messageId} in channel ${payload.channelId}: "${text}"`);
-      try {
-        await ctx.messages.delete(payload.messageId);
-      } catch (err) {
-        ctx.error(`Failed to delete message ${payload.messageId}`, err);
-      }
-      
+      try { await ctx.messages.delete(payload.messageId); } catch (err) { ctx.error(`Failed to delete message ${payload.messageId}`, err); }
+
       const triggerPrefix = (await settings.get("trigger-prefix")) as string;
       if (!triggerPrefix) {
         await ctx.messages.send(payload.channelId, "⚠️ The AI chat bot is currently disabled. Contact an admin to configure a trigger prefix.");
@@ -271,18 +262,14 @@ const onLoad = async (ctx: PluginContext) => {
     // ─── Handle /quota via delete-and-replace pattern ──────────────────
     if (text.trim().toLowerCase() === "/quota") {
       ctx.debug(`Deleting command message ${payload.messageId} in channel ${payload.channelId}: "${text}"`);
-      try {
-        await ctx.messages.delete(payload.messageId);
-      } catch (err) {
-        ctx.error(`Failed to delete message ${payload.messageId}`, err);
-      }
-      
+      try { await ctx.messages.delete(payload.messageId); } catch (err) { ctx.error(`Failed to delete message ${payload.messageId}`, err); }
+
       const tokenLimitPerHour = (await settings.get("token-limit-per-hour")) as number;
       if (tokenLimitPerHour <= 0) {
         await ctx.messages.send(payload.channelId, "✅ Token limits are currently disabled. You have unlimited access!");
         return;
       }
-      
+
       const userId = Number(payload.userId);
       if (!userId) {
         await ctx.messages.send(payload.channelId, "⚠️ Could not identify user.");
@@ -291,12 +278,12 @@ const onLoad = async (ctx: PluginContext) => {
 
       const now = Date.now();
       let record = userTokenMap.get(userId);
-      
+
       if (!record || now > record.resetTime) {
         await ctx.messages.send(payload.channelId, `✅ You have your full quota of ${tokenLimitPerHour} tokens available for this hour.`);
         return;
       }
-      
+
       const remaining = Math.max(0, tokenLimitPerHour - record.tokensUsed);
       const resetInMinutes = Math.ceil((record.resetTime - now) / 60_000);
       await ctx.messages.send(payload.channelId, `📊 You have ${remaining} tokens remaining out of ${tokenLimitPerHour}. Your quota resets in ${resetInMinutes} minute(s).`);
@@ -352,7 +339,7 @@ const onLoad = async (ctx: PluginContext) => {
       }
     }
 
-    ctx.debug(`AI trigger in channel ${payload.channelId}: ${question}`);
+    ctx.debug(`AI trigger in channel ${payload.channelId}`);
 
     // 5. Call API & post response (serialized per channel)
     await withChannelLock(payload.channelId, () =>
@@ -368,9 +355,18 @@ const onLoad = async (ctx: PluginContext) => {
 
           if (!modelName?.trim()) throw new Error("Model name is not configured.");
 
+          // Load fresh history (already includes the user's current message)
           const history = loadHistory(ctx, payload.channelId);
           const trimmed = trimHistory(history, historyLength);
-          const apiMessages = buildApiMessages(trimmed, question, systemPrompt);
+
+          // Build API messages from full chronological history only.
+          // The user's latest message is already included; do not pass question again.
+          let apiMessages = buildApiMessages(trimmed);
+
+          // Inject system prompt first if provided
+          if (systemPrompt.trim()) {
+            apiMessages = [{ role: "system", content: systemPrompt }, ...apiMessages];
+          }
 
           const { reply, tokensUsed } = await callApi(
             ctx, apiUrl, modelName.trim(), apiMessages, timeoutSeconds * 1000, apiKey,
@@ -382,7 +378,12 @@ const onLoad = async (ctx: PluginContext) => {
             if (record) record.tokensUsed += tokensUsed;
           }
 
-          trimmed.aiReplies.push({ userId: null, content: reply, timestamp: Date.now() });
+          // Save AI reply to history with userId: null so it's recognized as assistant
+          trimmed.aiReplies.push({
+            userId: null,
+            content: reply,
+            timestamp: Date.now(),
+          });
           saveHistory(ctx, payload.channelId, trimmed);
           await ctx.messages.send(payload.channelId, reply);
         } catch (err) {
@@ -391,7 +392,7 @@ const onLoad = async (ctx: PluginContext) => {
             err instanceof Error && err.name === "AbortError"
               ? `⚠️ Timeout: API didn't respond within ${(await settings.get("timeout-seconds")) as number}s.`
               : `⚠️ Error: ${err instanceof Error ? err.message : String(err)}`;
-          
+
           try { await ctx.messages.send(payload.channelId, errorMsg); } catch { /* ignore */ }
         }
       })(),
